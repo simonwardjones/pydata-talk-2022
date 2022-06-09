@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "pydata-talk-2022"
+version = "0.1.0"
+description = "A collection of code for 2022 PyData talk"
+authors = ["simonwardjones <simonwardjones@yahoo.co.uk>"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+jupyter = "^1.0.0"
+Pillow = "^9.1.1"
+jupyter-contrib-nbextensions = "^0.5.1"
+jupyterlab = "^3.4.3"
+
+[tool.poetry.dev-dependencies]
+mypy = "^0.961"
+black = "^22.3.0"
+flake8 = "^4.0.1"
+isort = "^5.10.1"
+pytest = "^7.1.2"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
