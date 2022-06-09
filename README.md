@@ -20,7 +20,7 @@ Please come with Jupyter Notebook installed. If you're using conda do `conda ins
 
 Repository link: https://github.com/simonwardjones/pydata-talk-2022
 
-[![Open In Colab - More of the Standard Library](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simonwardjones/pydata-talk-2022/code/more-of-the-standard-library.ipynb)
+[![Open In Colab - More of the Standard Library](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simonwardjones/pydata-talk-2022/blob/main/code/more-of-the-standard-library.ipynb)
 
 **talk Overview:**
 
