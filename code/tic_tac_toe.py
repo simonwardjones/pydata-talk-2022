@@ -1,10 +1,11 @@
 """tic_tac_toe_board"""
 
 
+import json
 import pathlib
 import random
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
 from itertools import chain, islice
 from typing import Counter, Iterable, NamedTuple, Protocol
@@ -32,16 +33,31 @@ class Move(NamedTuple):
 
 
 class Command(Enum):
-    undo = "undo"
-    redo = "redo"
-    quit = "quit"
+    undo = "u"
+    redo = "r"
+    quit = "q"
+    save = "s"
+    load = "l"
+
+    def __contains__(cls, item):
+        return item in {v.value for v in cls.__members__.values()}
 
 
+@dataclass
 class Board:
-    def __init__(self):
-        self.moves = []
-        self.undo_moves = []
-        self.state = [None] * 9
+    moves: list[Move]
+    undo_moves: list[Move]
+    state: list[str | None]
+
+    def __init__(
+        self,
+        moves: list[Move] = None,
+        undo_moves: list[Move] = None,
+        state: list[str | None] = None,
+    ):
+        self.moves = moves if moves is not None else []
+        self.undo_moves = undo_moves if undo_moves is not None else []
+        self.state = state if state is not None else [None] * 9
 
     def _rows(self) -> Iterable[Iterable[str | None]]:
         """Returns a iterable of rows of the board."""
@@ -59,8 +75,10 @@ class Board:
         """Return the winner of the game."""
         for group in chain(self._rows(), self._columns(), self._diagonals()):
             group_counter = Counter(group)
-            if None not in group_counter and len(group_counter) == 1:
-                return group_counter.most_common(1)[0][0]
+            if group_counter[X_SYMBOL] == 3:
+                return X_SYMBOL
+            elif group_counter[O_SYMBOL] == 3:
+                return O_SYMBOL
         return None
 
     def has_winner(self) -> bool:
@@ -116,55 +134,14 @@ class Board:
         """Return True if there is a move to redo."""
         return len(self.undo_moves) > 0
 
+    def as_dict(self):
+        return asdict(self)
 
-@dataclass
-class Player(ABC):
-    symbol: str
-
-    def get_action(self, ui: "UI", board: Board) -> Move | Command:
-        """Return a move or a command."""
-        raise NotImplementedError
-
-
-class CLIPlayer(Player):
-    def get_action(self, ui: "UI", board: Board) -> Command | Move:
-        allowed_inputs = [str(pos) for pos in board.get_available_positions()]
-        if board.can_undo():
-            allowed_inputs.append("u")
-        if board.can_redo():
-            allowed_inputs.append("r")
-        allowed_inputs.append("q")
-        while True:
-            value = ui.get_user_input(
-                prompt=f"Player {self.symbol}, please enter your move (1-9): ",
-                allowed_inputs=allowed_inputs,
-            )
-            if value == "u":
-                return Command.undo
-            elif value == "r":
-                return Command.redo
-            elif value == "q":
-                return Command.quit
-
-            return Move(self.symbol, int(value))
-
-
-class RandomComputerPlayer(Player):
-    def get_action(self, ui: "UI", board: Board) -> Command | Move:
-        while True:
-            value = ui.get_user_input(
-                prompt=f"Press enter for Computer's move:",
-                allowed_inputs=["", "u", "r", "q"],
-            )
-            if value == "u":
-                return Command.undo
-            elif value == "r":
-                return Command.redo
-            elif value == "q":
-                return Command.quit
-
-            random_position = random.choice(board.get_available_positions())
-            return Move(self.symbol, random_position)
+    @classmethod
+    def from_dict(cls, data: dict):
+        moves = [Move(*move) for move in data["moves"]]
+        undo_moves = [Move(*move) for move in data["undo_moves"]]
+        return cls(moves, undo_moves, data["state"])
 
 
 class UI(Protocol):
@@ -174,11 +151,55 @@ class UI(Protocol):
     def display_message(self, message: str) -> None:
         raise NotImplementedError()
 
-    def get_user_input(self, prompt: str, allowed_inputs: list[str]) -> str:
+    def get_user_input(self, prompt: str, allowed_inputs: list[str] | None) -> str:
         raise NotImplementedError()
 
     def get_number_of_players(self) -> int:
         raise NotImplementedError()
+
+
+@dataclass
+class Player(ABC):
+    symbol: str
+
+    def get_action(self, ui: UI, board: Board) -> Move | Command:
+        """Return a move or a command."""
+        raise NotImplementedError
+
+
+class CLIPlayer(Player):
+    def get_action(self, ui: UI, board: Board) -> Command | Move:
+        allowed_inputs = [str(pos) for pos in board.get_available_positions()]
+        if board.can_undo():
+            allowed_inputs.append("u")
+        if board.can_redo():
+            allowed_inputs.append("r")
+        allowed_inputs.extend(["q", "s", "l"])  # always allow quit or save
+        while True:
+            value = ui.get_user_input(
+                prompt=f"Player {self.symbol}, please enter your move (1-9): ",
+                allowed_inputs=allowed_inputs,
+            )
+            for command in Command:
+                if command.value == value:
+                    return command
+
+            return Move(self.symbol, int(value))
+
+
+class RandomComputerPlayer(Player):
+    def get_action(self, ui: UI, board: Board) -> Command | Move:
+        while True:
+            value = ui.get_user_input(
+                prompt=f"Press enter for Computer's move:",
+                allowed_inputs=None,
+            )
+            for command in Command:
+                if command.value == value:
+                    return command
+
+            random_position = random.choice(board.get_available_positions())
+            return Move(self.symbol, random_position)
 
 
 class CLI:
@@ -204,6 +225,8 @@ class CLI:
         self.display_message("Press u/U to undo a move.")
         self.display_message("Press r/R to redo a move.")
         self.display_message("Press q/Q to quit.")
+        self.display_message("Press s/S to save and quit.")
+        self.display_message("Press l/L load a saved game.")
 
     def display_message(self, message: str) -> None:
         print(message)
@@ -251,20 +274,44 @@ class TicTacToe:
             action = player.get_action(ui=self.ui, board=self.board)
 
             if isinstance(action, Command):
-                if action == Command.undo:
-                    self.board.undo_move()
-                    self.ui.display_message("Undid last move.")
-                elif action == Command.redo:
-                    self.board.redo_move()
-                    self.ui.display_message("Undid last move.")
-                elif action == Command.quit:
-                    self.ui.display_message("Quitting game")
-                    return
-                else:
-                    raise ValueError(f"Invalid Command {action}")
+                self.handle_command(command=action)
             else:
                 self.board.make_move(action)
+
             self.increment_player()
+
+    def handle_command(self, command: Command):
+        if command == Command.undo:
+            self.board.undo_move()
+            self.ui.display_message("Undid last move.")
+        elif command == Command.redo:
+            self.board.redo_move()
+            self.ui.display_message("Undid last move.")
+        elif command == Command.quit:
+            self.ui.display_message("Quitting game")
+            exit()
+        elif command == Command.save:
+            self.save_state()
+            exit()
+        elif command == Command.load:
+            self.set_state_from_file()
+            self.increment_player()  # We are just about to increment the player
+        else:
+            raise ValueError(f"Invalid Command {command}")
+
+    def save_state(self):
+        self.ui.display_message("Saving game")
+        game_data = {
+            "current_player": self.current_player,
+            "board": self.board.as_dict(),
+        }
+        (DATA_DIR / "game.json").write_text(json.dumps(game_data))
+
+    def set_state_from_file(self):
+        self.ui.display_message("Loading game")
+        game_data = json.loads((DATA_DIR / "game.json").read_text())
+        self.current_player = game_data["current_player"]
+        self.board = Board.from_dict(game_data["board"])
 
 
 if __name__ == "__main__":
